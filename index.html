@@ -379,7 +379,8 @@ td.td-act{vertical-align:middle;text-align:center;white-space:nowrap;min-width:7
         <button onclick="importarDados()" style="flex:1;background:#0a1a2a;color:#38bdf8;border:1px solid #38bdf833;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:700;cursor:pointer;font-family:Montserrat,sans-serif">📥 Importar</button>
       </div>
       <button onclick="openEditProfile()" style="width:100%;background:#22222a;color:var(--gray2);border:1px solid #7b788420;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:8px;font-family:Montserrat,sans-serif">✏️ Editar Perfil</button>
-      <button class="btn-logout" onclick="doLogout()">⏻ Sair</button>
+            <button onclick="limparCacheApp()" style="width:100%;background:#0a1a1a;color:#38bdf8;border:1px solid #38bdf820;border-radius:8px;padding:7px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;font-family:Montserrat,sans-serif">🔄 Limpar Cache</button>
+<button class="btn-logout" onclick="doLogout()">⏻ Sair</button>
     </div>
   </aside>
   <main class="main">
@@ -1545,85 +1546,66 @@ function showErr(el,msg){el.textContent=msg;el.style.display='block'}
 
 
 <script>
+// ── APP VERSION: mude este número a cada deploy ──
+const APP_VERSION = '4';
+const VER_KEY = 'uni_app_version';
+
+(function checkVersion() {
+  const stored = localStorage.getItem(VER_KEY);
+  if (stored && stored !== APP_VERSION) {
+    // Versão nova detectada: limpa TODOS os caches e recarrega
+    console.log('[UNI] Nova versão detectada. Limpando cache...');
+    if ('caches' in window) {
+      caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).then(() => {
+        localStorage.setItem(VER_KEY, APP_VERSION);
+        window.location.reload(true);
+      });
+    } else {
+      localStorage.setItem(VER_KEY, APP_VERSION);
+      window.location.reload(true);
+    }
+    return;
+  }
+  localStorage.setItem(VER_KEY, APP_VERSION);
+})();
+
+// ── SERVICE WORKER ──
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then(reg => {
+  navigator.serviceWorker.register('sw.js?v=4').then(reg => {
+    // Força verificação de update imediatamente
     reg.update();
+
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;
       nw.addEventListener('statechange', () => {
-        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+        if (nw.state === 'installed') {
+          // Ativa nova versão imediatamente (com ou sem aba aberta)
           nw.postMessage('skipWaiting');
         }
       });
     });
-  });
+  }).catch(err => console.warn('[SW] Registro falhou:', err));
+
+  // Quando novo SW assume controle -> recarrega página
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!refreshing) { refreshing = true; window.location.reload(); }
+    if (!refreshing) { refreshing = true; window.location.reload(true); }
   });
 }
-</script>
-<script>
 
-  // ── SYNC CONSTANTS ──
-  const DB_KEY = 'uni_db';
-  const PH_KEY = 'uni_photos';
-  const APP_ID = 'uni_5w2h';
-
-
-// ── EXPORTAR / IMPORTAR DADOS ──────────────────────────────────────────────
-function exportarDados() {
-  try {
-    const db   = JSON.parse(localStorage.getItem(DB_KEY)  || '{}');
-    const ph   = JSON.parse(localStorage.getItem(PH_KEY)  || '{}');
-    const payload = { __app: APP_ID, __v: 1, __ts: new Date().toISOString(), db, photos: ph };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = APP_ID + '_backup_' + new Date().toISOString().slice(0,10) + '.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('✅ Backup exportado com sucesso!');
-  } catch(e) { showToast('❌ Erro ao exportar: ' + e.message); }
-}
-
-function importarDados() {
-  const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = '.json';
-  inp.onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const payload = JSON.parse(ev.target.result);
-        if (!payload.__app || !payload.db) throw new Error('Arquivo inválido ou corrompido.');
-        if (!confirm('⚠️ Isso vai SUBSTITUIR todos os dados locais pelo backup.\nTem certeza?')) return;
-        localStorage.setItem(DB_KEY, JSON.stringify(payload.db));
-        if (payload.photos) localStorage.setItem(PH_KEY, JSON.stringify(payload.photos));
-        showToast('✅ Dados importados! Recarregando...');
-        setTimeout(() => location.reload(), 1200);
-      } catch(err) { showToast('❌ Erro ao importar: ' + err.message); }
-    };
-    reader.readAsText(file);
-  };
-  inp.click();
-}
-
-function showToast(msg) {
-  let t = document.getElementById('_toast');
-  if (!t) {
-    t = document.createElement('div');
-    t.id = '_toast';
-    t.style = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 22px;border-radius:10px;font-size:13px;font-family:Montserrat,sans-serif;z-index:9999;box-shadow:0 4px 24px #0008;transition:opacity .3s';
-    document.body.appendChild(t);
+// ── BOTÃO LIMPAR CACHE (escape hatch manual) ──
+function limparCacheApp() {
+  if (!confirm('Isso vai limpar o cache do app e recarregar. Os seus DADOS não serão apagados. Continuar?')) return;
+  const clear = [];
+  if ('caches' in window) clear.push(caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))));
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage('clearAll');
   }
-  t.textContent = msg; t.style.opacity = '1';
-  clearTimeout(t._to);
-  t._to = setTimeout(() => t.style.opacity = '0', 3000);
+  Promise.all(clear).then(() => {
+    localStorage.setItem(VER_KEY, APP_VERSION);
+    window.location.reload(true);
+  });
 }
-
 </script>
 </body>
 </html>
