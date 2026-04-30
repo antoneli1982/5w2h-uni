@@ -5589,11 +5589,14 @@ function copiarMensagemProjeto(pid){
   function closeCal(){cal.classList.remove('open');_open=false;window._lionCalOpen=false;_inp=null;}
 
   document.addEventListener('mousedown',function(e){
-    if(_open && !cal.contains(e.target)) closeCal();
+    // Se clicou em outro input data-liondate, NÃO fecha — deixa o handler de click reabrir nele
+    var clickedDateInput = e.target && e.target.dataset && e.target.dataset.liondate;
+    if(_open && !cal.contains(e.target) && !clickedDateInput) closeCal();
   });
 
   window.openLionCal=function(inp,e){
-    if(e){ e.stopPropagation(); e.preventDefault(); }
+    // Não usa preventDefault — isso quebra o foco do input
+    if(e){ e.stopPropagation(); }
     _inp=inp;
     const v=inp.value||'';
     const m=v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
@@ -5610,16 +5613,24 @@ function copiarMensagemProjeto(pid){
     render();
     cal.classList.add('open');
     _open=true;
+    window._lionCalOpen=true;
   };
 
-  // Make all date inputs open calendar on click
+  // Abre calendário quando o input recebe foco (via teclado ou clique).
+  // Usar só focusin evita que o handler dispare 2x (focusin + click) e cause race conditions.
   document.addEventListener('focusin',function(e){
     const t=e.target;
     if(t && t.dataset && t.dataset.liondate) openLionCal(t,e);
   });
+  // Backup: se o input já estava focado e o usuário clicou de novo (ex: clicou de Prazo Inicial pra Prazo Final),
+  // o focusin pode não disparar — então usamos click como fallback.
   document.addEventListener('click',function(e){
     const t=e.target;
-    if(t && t.dataset && t.dataset.liondate) openLionCal(t,e);
+    if(t && t.dataset && t.dataset.liondate){
+      // Se já está focado e o calendário está aberto neste mesmo input, não faz nada
+      if(_open && _inp===t) return;
+      openLionCal(t,e);
+    }
   });
 })();
 </script>
