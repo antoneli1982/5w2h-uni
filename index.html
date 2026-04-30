@@ -632,16 +632,17 @@ tr.row-struck td.td-act, tr.row-struck td:last-child{opacity:1;text-decoration:n
 <script>
   (function(){
     var FB_CFG = {
-      apiKey:            "AIzaSyBY5LeyMDQj28MJYbVHmtggtzzclGYgHCk",
-      authDomain:        "w2h-lion.firebaseapp.com",
-      projectId:         "w2h-lion",
-      storageBucket:     "w2h-lion.firebasestorage.app",
-      messagingSenderId: "611200932059",
-      appId:             "1:611200932059:web:b110d1743f4c4755bed4fe"
+      apiKey:            "AIzaSyBEHuOqEeR4_tT4y98br9tpuwyOq_h-TEc",
+      authDomain:        "trilium-ef589.firebaseapp.com",
+      projectId:         "trilium-ef589",
+      storageBucket:     "trilium-ef589.firebasestorage.app",
+      messagingSenderId: "182535837269",
+      appId:             "1:182535837269:web:3b1fffdaef771a6e1066dc",
+      measurementId:     "G-6SP5LHG8C2"
     };
-    var APP_DOC = 'lion_5w2h';
-    var DB_K    = 'lion_db';
-    var PH_K    = 'lion_photos';
+    var APP_DOC = 'trilium_5w2h';
+    var DB_K    = 'trilium_db';
+    var PH_K    = 'trilium_photos';
     var _ref = null;
     var _tabId = 'tab_' + Math.random().toString(36).slice(2) + '_' + Date.now().toString(36);
     var _lastSavedId = '';
@@ -657,7 +658,7 @@ tr.row-struck td.td-act, tr.row-struck td:last-child{opacity:1;text-decoration:n
       });
       // Tenta carregar do localStorage também (caso seja uma nova aba/sessão)
       try{
-        var lsRaw = localStorage.getItem('lion_db');
+        var lsRaw = localStorage.getItem('trilium_db');
         if(lsRaw){
           var lsParsed = JSON.parse(lsRaw);
           (lsParsed.projects||[]).forEach(function(p){
@@ -743,6 +744,7 @@ tr.row-struck td.td-act, tr.row-struck td:last-child{opacity:1;text-decoration:n
         try{ fs.settings({ experimentalForceLongPolling: true, merge: true }); }catch(e){}
         _ref = fs.collection('apps').doc(APP_DOC);
         console.log('[FB] init ✅', APP_DOC, '| tabId:', _tabId);
+        try{ _setStatus('connected', 'Online'); }catch(e){}
 
         // onSnapshot — tempo real
         _ref.onSnapshot(function(snap){
@@ -759,9 +761,11 @@ tr.row-struck td.td-act, tr.row-struck td:last-child{opacity:1;text-decoration:n
               return;
             }
             console.log('[FB] snapshot: update remoto recebido ✅', remote.saveId);
+            try{ _setStatus('syncing', 'Sincronizando...'); }catch(e){}
             var photos = d.photos ? JSON.parse(d.photos) : null;
             _applyRemote(remote, photos);
             _syncUI();
+            try{ setTimeout(function(){ _setStatus('connected', 'Online'); }, 600); }catch(e){}
           }catch(ex){ console.error('[FB] snapshot parse error', ex); }
         }, function(err){
           console.warn('[FB] onSnapshot falhou:', err.code, err.message);
@@ -769,7 +773,10 @@ tr.row-struck td.td-act, tr.row-struck td:last-child{opacity:1;text-decoration:n
           _startPolling();
         });
 
-      }catch(e){ console.error('[FB] init error:', e.message); }
+      }catch(e){
+        console.error('[FB] init error:', e.message);
+        try{ _setStatus('error', 'Erro de conexão'); }catch(e){}
+      }
     }
 
     // SAVE
@@ -789,9 +796,16 @@ tr.row-struck td.td-act, tr.row-struck td:last-child{opacity:1;text-decoration:n
         var photos = {};
         db.users.forEach(function(u){ if(u.photo) photos[u.user] = u.photo; });
         try{ localStorage.setItem(PH_K, JSON.stringify(photos)); }catch(e){}
+        try{ _setStatus('syncing', 'Salvando...'); }catch(e){}
         _ref.set({ db: JSON.stringify(cl), photos: JSON.stringify(photos), updated: new Date().toISOString() })
-          .then(function(){ console.log('[FB] saved ✅', sid); })
-          .catch(function(e){ console.error('[FB] save error:', e.code, e.message); });
+          .then(function(){
+            console.log('[FB] saved ✅', sid);
+            try{ _setStatus('connected', 'Online'); }catch(e){}
+          })
+          .catch(function(e){
+            console.error('[FB] save error:', e.code, e.message);
+            try{ _setStatus('error', 'Erro ao salvar'); }catch(e){}
+          });
       }catch(e){ console.error('[FB] save exception:', e); }
     };
 
@@ -847,6 +861,37 @@ tr.row-struck td.td-act, tr.row-struck td:last-child{opacity:1;text-decoration:n
       if(_pollTimer){ clearInterval(_pollTimer); _pollTimer=null; }
       console.log('[FB] polling parado');
     };
+
+    // ── Indicador de status de conexão na topbar ──
+    function _setStatus(state, label){
+      try{
+        var dot = document.getElementById('fb-dot');
+        var txt = document.getElementById('fb-text');
+        if(!dot || !txt) return;
+        var colors = {
+          connecting: '#fbbf24',     // âmbar
+          connected:  '#4ade80',     // verde
+          syncing:    '#A9E527',     // verde claro pulsando
+          offline:    '#ef4444',     // vermelho
+          error:      '#ef4444'
+        };
+        dot.style.background = colors[state] || '#888';
+        if(state === 'syncing'){
+          dot.style.boxShadow = '0 0 8px '+colors[state];
+        } else {
+          dot.style.boxShadow = 'none';
+        }
+        txt.textContent = label || state;
+      }catch(e){}
+    }
+    window._fbStatus = _setStatus;
+
+    // Detecta online/offline
+    try{
+      window.addEventListener('online',  function(){ _setStatus('connected', 'Online'); });
+      window.addEventListener('offline', function(){ _setStatus('offline', 'Offline'); });
+      if(!navigator.onLine) _setStatus('offline', 'Offline');
+    }catch(e){}
 
     _init();
   })();
@@ -979,6 +1024,10 @@ tr.row-struck td.td-act, tr.row-struck td:last-child{opacity:1;text-decoration:n
     <div class="topbar">
       <div class="topbar-title" id="tb-title">Dashboard</div>
       <div id="tb-badge"></div>
+      <div id="fb-status" title="Status da sincronização" style="display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:99px;font-family:Montserrat,sans-serif;font-size:10px;font-weight:700;background:#0e2424;border:1px solid #A9E52733;color:#A9E527;letter-spacing:.4px">
+        <span id="fb-dot" style="width:7px;height:7px;border-radius:50%;background:#888;display:inline-block;transition:background .3s"></span>
+        <span id="fb-text">Conectando...</span>
+      </div>
       <button id="btn-admin-mode" onclick="abrirModalAdmin()" title="Acesso administrador (permite alterar dados)" style="background:linear-gradient(135deg,#A9E52722,#A9E52711);color:#A9E527;border:1.5px solid #A9E52766;font-family:Montserrat,sans-serif;font-weight:800;font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer;letter-spacing:.3px;display:flex;align-items:center;gap:6px;transition:all .2s">🔑 <span>Administrador</span></button>
       <button id="btn-admin-exit" onclick="sairModoAdmin()" title="Voltar ao modo visualização" style="display:none;background:linear-gradient(135deg,#4ade8022,#4ade8011);color:#4ade80;border:1.5px solid #4ade8066;font-family:Montserrat,sans-serif;font-weight:800;font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer;letter-spacing:.3px;align-items:center;gap:6px">✅ <span>Modo Admin · Sair</span></button>
       <button id="btn-cron-top" onclick="cronScrollTop()" title="Voltar ao topo do cronograma">⬆ Topo</button>
@@ -1298,10 +1347,10 @@ function saveDB(){
   try{
     const photos={};
     db.users.forEach(u=>{if(u.photo){photos[u.user]=u.photo;}});
-    try{localStorage.setItem('lion_photos',JSON.stringify(photos));}catch(e){}
+    try{localStorage.setItem('trilium_photos',JSON.stringify(photos));}catch(e){}
     const dbClean=JSON.parse(JSON.stringify(db));
     dbClean.users.forEach(u=>{delete u.photo;});
-    localStorage.setItem('lion_db',JSON.stringify(dbClean));
+    localStorage.setItem('trilium_db',JSON.stringify(dbClean));
   }catch(e){ console.error('saveDB local error',e); }
   // Cloud save
   try{
@@ -1311,14 +1360,14 @@ function saveDB(){
 
 function loadDB(){
   try{
-    const s=localStorage.getItem('lion_db');
+    const s=localStorage.getItem('trilium_db');
     if(s){
       const parsed=JSON.parse(s);
       if(parsed&&parsed.users){
         Object.assign(db,parsed);
         // Restore photos
         try{
-          const ps=localStorage.getItem('lion_photos');
+          const ps=localStorage.getItem('trilium_photos');
           if(ps){
             const photos=JSON.parse(ps);
             db.users.forEach(u=>{if(photos[u.user])u.photo=photos[u.user];});
@@ -1339,7 +1388,7 @@ function loadDB(){
         });
       }
     }
-  }catch(e){localStorage.removeItem('lion_db');}
+  }catch(e){localStorage.removeItem('trilium_db');}
   // Migração para sistema multi-empresa (cria empresa padrão e vincula projetos)
   try{ migrarParaMultiEmpresa(); }catch(e){console.warn('Migração multi-empresa:',e);}
 }
@@ -3581,7 +3630,7 @@ function saveFileAttach(pid, file){
   reader.onload=function(e){
     try{
       const b64=e.target.result; // data:...;base64,...
-      localStorage.setItem('lion_attach_'+pid, b64);
+      localStorage.setItem('trilium_attach_'+pid, b64);
       p.fileAttachment={
         name: file.name,
         size: file.size,
@@ -3603,7 +3652,7 @@ function saveFileAttach(pid, file){
 }
 
 function downloadFileAttach(pid){
-  const b64=localStorage.getItem('lion_attach_'+pid);
+  const b64=localStorage.getItem('trilium_attach_'+pid);
   if(!b64){ showToast('❌ Arquivo não encontrado neste dispositivo.'); return; }
   const p=db.projects.find(x=>x.id===pid);
   const name=(p&&p.fileAttachment&&p.fileAttachment.name)||'arquivo';
@@ -3632,7 +3681,7 @@ function renderExcelAttachmentPanel(p){
   const a = p.fileAttachment || p.excelAttachment || null;
   if(!a) return '';
 
-  const hasLocal = !!localStorage.getItem('lion_attach_'+p.id);
+  const hasLocal = !!localStorage.getItem('trilium_attach_'+p.id);
   const sizeStr  = a.size ? (a.size < 1024*1024
       ? Math.round(a.size/1024)+'KB'
       : (a.size/(1024*1024)).toFixed(1)+'MB') : '';
@@ -3643,7 +3692,7 @@ function renderExcelAttachmentPanel(p){
     ? `<button onclick="downloadFileAttach(${p.id})" style="background:#14532d;border:1px solid #4ade8066;color:#4ade80;border-radius:8px;padding:6px 14px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer" onmouseover="this.style.background='#166534'" onmouseout="this.style.background='#14532d'">⬇ Baixar</button>`
     : `<span style="font-size:10px;color:#fbbf2488;font-style:italic">⚠ Arquivo salvo em outro dispositivo</span>`;
 
-  const removeBtn = `<button onclick="(function(){const pp=db.projects.find(x=>x.id===${p.id});if(pp&&confirm('Remover arquivo anexado?')){delete pp.fileAttachment;delete pp.excelAttachment;delete pp.excelRows;localStorage.removeItem('lion_attach_'+${p.id});saveDB();renderGantt(pp);}})();" style="background:transparent;border:1px solid #ef444433;color:#fca5a5;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer" onmouseover="this.style.borderColor='#ef4444'" onmouseout="this.style.borderColor='#ef444433'">🗑 Remover</button>`;
+  const removeBtn = `<button onclick="(function(){const pp=db.projects.find(x=>x.id===${p.id});if(pp&&confirm('Remover arquivo anexado?')){delete pp.fileAttachment;delete pp.excelAttachment;delete pp.excelRows;localStorage.removeItem('trilium_attach_'+${p.id});saveDB();renderGantt(pp);}})();" style="background:transparent;border:1px solid #ef444433;color:#fca5a5;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer" onmouseover="this.style.borderColor='#ef4444'" onmouseout="this.style.borderColor='#ef444433'">🗑 Remover</button>`;
 
   return `<div style="background:linear-gradient(180deg,#0d1a0e,#091209);border:2px solid #4ade8040;border-radius:14px;padding:14px 18px;margin-bottom:14px;box-shadow:0 0 18px #4ade8010">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
@@ -4722,8 +4771,8 @@ function saveProfile(){
     session.user.user=newUser;
     // Update photo key in localStorage when username changes
     try{
-      const ps=localStorage.getItem('lion_photos');
-      if(ps){const photos=JSON.parse(ps);if(photos[oldUser]){photos[newUser]=photos[oldUser];delete photos[oldUser];localStorage.setItem('lion_photos',JSON.stringify(photos));}}
+      const ps=localStorage.getItem('trilium_photos');
+      if(ps){const photos=JSON.parse(ps);if(photos[oldUser]){photos[newUser]=photos[oldUser];delete photos[oldUser];localStorage.setItem('trilium_photos',JSON.stringify(photos));}}
     }catch(e){}
   }
   if(photoImg.style.display!=='none'&&photoImg.src&&photoImg.src.startsWith('data:'))u.photo=photoImg.src;
@@ -4801,11 +4850,11 @@ function showErr(el,msg){el.textContent=msg;el.style.display='block'}
 <script>
 
   // ── SYNC CONSTANTS ──
-  const DB_KEY = 'lion_db';
-  window._DB_KEY = 'lion_db';
-  window._PH_KEY = 'lion_photos';
+  const DB_KEY = 'trilium_db';
+  window._DB_KEY = 'trilium_db';
+  window._PH_KEY = 'trilium_photos';
   window._APP_ID = 'lion_5w2h';
-  const PH_KEY = 'lion_photos';
+  const PH_KEY = 'trilium_photos';
   const APP_ID = 'lion_5w2h';
 
 
@@ -5013,7 +5062,7 @@ async function epSendManual() {
   function openFirebaseConfig() {
     // Load saved config
     try {
-      const saved = JSON.parse(localStorage.getItem('lion_db_firebase_config') || '{}');
+      const saved = JSON.parse(localStorage.getItem('trilium_db_firebase_config') || '{}');
       document.getElementById('fb-apikey').value  = saved.apiKey || '';
       document.getElementById('fb-auth').value    = saved.authDomain || '';
       document.getElementById('fb-proj').value    = saved.projectId || '';
@@ -5038,7 +5087,7 @@ async function epSendManual() {
       document.getElementById('fb-status').textContent='❌ Preencha ao menos API Key e Project ID.';
       return;
     }
-    localStorage.setItem('lion_db_firebase_config', JSON.stringify(cfg));
+    localStorage.setItem('trilium_db_firebase_config', JSON.stringify(cfg));
     document.getElementById('fb-status').style.color='#f59e0b';
     document.getElementById('fb-status').textContent='⏳ Conectando e fazendo upload dos dados...';
     // Force page reload to re-init Firebase with new config
